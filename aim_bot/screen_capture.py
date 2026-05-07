@@ -10,21 +10,37 @@ from config import WINDOW_TITLE
 
 
 class ScreenCapture:
-    """屏幕捕获器，封装 DXcam 实现高性能截图"""
+    """
+    屏幕捕获器，封装 DXcam 实现高性能截图。
+
+    DXcam 使用 Windows DirectX API 抓取屏幕，相比传统方法：
+    - 帧率更高（可达 60-240 FPS）
+    - CPU 占用更低
+    - 支持区域捕获，减少处理数据量
+    """
 
     def __init__(self):
-        self.camera = None
-        self.target_fps = 60
-        self._window_rect = None  # 缓存窗口区域
+        self.camera = None          # DXcam 相机对象
+        self.target_fps = 60        # 目标捕获帧率
+        self._window_rect = None    # 缓存的窗口区域 (left, top, right, bottom)
 
     def find_window(self):
-        """查找 Aim Lab 游戏窗口，返回窗口区域 (left, top, right, bottom)"""
+        """
+        遍历系统窗口，找到 Aim Lab 游戏窗口。
+
+        通过 win32gui.EnumWindows 枚举所有顶层窗口，
+        匹配标题包含 WINDOW_TITLE 的窗口。
+
+        Returns:
+            tuple | None: 窗口区域 (left, top, right, bottom)，未找到返回 None
+        """
         def enum_callback(hwnd, windows):
+            """EnumWindows 回调函数：收集匹配的窗口句柄"""
             if win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
                 if WINDOW_TITLE.lower() in title.lower():
                     windows.append(hwnd)
-            return True
+            return True  # 继续枚举
 
         windows = []
         win32gui.EnumWindows(enum_callback, windows)
@@ -35,11 +51,12 @@ class ScreenCapture:
             return None
 
         hwnd = windows[0]
-        # 获取窗口客户区矩形
+        # 获取窗口客户区矩形（不包括标题栏和边框）
         rect = win32gui.GetClientRect(hwnd)
+        # 将客户区左上角坐标转换为屏幕坐标
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        right = left + rect[2]
-        bottom = top + rect[3]
+        right = left + rect[2]   # left + 宽度
+        bottom = top + rect[3]   # top + 高度
 
         print(f"[信息] 找到窗口: '{win32gui.GetWindowText(hwnd)}'")
         print(f"[信息] 窗口区域: left={left}, top={top}, right={right}, bottom={bottom}")
@@ -48,17 +65,20 @@ class ScreenCapture:
         return (left, top, right, bottom)
 
     def start(self, region=None):
-        """启动屏幕捕获
+        """
+        启动 DXcam 屏幕捕获。
 
         Args:
-            region: 捕获区域 (left, top, right, bottom)，None 表示全屏
+            region: 捕获区域 (left, top, right, bottom)，None 表示全屏捕获
         """
         if self.camera is not None:
             self.stop()
 
+        # 创建 DXcam 实例（每个实例可以独立捕获不同区域）
         self.camera = dxcam.create()
         self._window_rect = region
 
+        # video_mode=True 保证持续捕获最新帧
         if region:
             self.camera.start(target_fps=self.target_fps, region=region,
                               video_mode=True)
@@ -68,17 +88,21 @@ class ScreenCapture:
             print("[信息] 屏幕捕获已启动 (全屏模式)")
 
     def get_frame(self):
-        """获取一帧图像
+        """
+        获取最新一帧图像。
+
+        DXcam 的 get_latest_frame() 返回最新可用帧，
+        而不是排队等待下一帧，保证实时性。
 
         Returns:
-            numpy.ndarray 或 None（如果无新帧）
+            numpy.ndarray | None: BGR 格式的图像，无新帧时返回 None
         """
         if self.camera is None:
             return None
         return self.camera.get_latest_frame()
 
     def stop(self):
-        """停止屏幕捕获"""
+        """停止屏幕捕获，释放 DXcam 资源"""
         if self.camera is not None:
             self.camera.stop()
             self.camera = None
@@ -86,7 +110,7 @@ class ScreenCapture:
 
     @property
     def window_center(self):
-        """获取窗口中心点坐标 (x, y)"""
+        """获取窗口中心点在屏幕上的坐标 (x, y)"""
         if self._window_rect:
             left, top, right, bottom = self._window_rect
             cx = (left + right) // 2
@@ -96,11 +120,12 @@ class ScreenCapture:
 
     @property
     def window_size(self):
-        """获取窗口尺寸 (width, height)"""
+        """获取窗口的宽高尺寸 (width, height)"""
         if self._window_rect:
             left, top, right, bottom = self._window_rect
             return (right - left, bottom - top)
         return None
 
     def __del__(self):
+        """析构时自动释放屏幕捕获资源"""
         self.stop()
