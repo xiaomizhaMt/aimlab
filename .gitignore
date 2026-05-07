@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Conda 环境相关
+.env/
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
