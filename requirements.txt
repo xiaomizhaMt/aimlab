@@ -1,0 +1,6 @@
+dxcam
+opencv-python
+numpy
+pydirectinput
+keyboard
+pywin32

@@ -8,10 +8,25 @@ import numpy as np
 from collections import deque
 
 import pydirectinput
-from config import (
-    AIM_SENSITIVITY, AIM_SMOOTHING, AIM_DEADZONE,
-    SHOOT_RANGE, SHOOT_COOLDOWN, AUTO_SHOOT
-)
+
+try:
+    from .config import (
+        AIM_DEADZONE,
+        AIM_SENSITIVITY,
+        AIM_SMOOTHING,
+        AUTO_SHOOT,
+        SHOOT_COOLDOWN,
+        SHOOT_RANGE,
+    )
+except ImportError:
+    from config import (
+        AIM_DEADZONE,
+        AIM_SENSITIVITY,
+        AIM_SMOOTHING,
+        AUTO_SHOOT,
+        SHOOT_COOLDOWN,
+        SHOOT_RANGE,
+    )
 
 
 class AimAssist:
@@ -26,7 +41,6 @@ class AimAssist:
 
         # 累计统计
         self.shots_fired = 0
-        self.targets_hit = 0
 
         # 设置 PyDirectInput 的默认延迟
         pydirectinput.PAUSE = 0.0
@@ -70,7 +84,7 @@ class AimAssist:
 
         # 应用鼠标移动（相对移动）
         if avg_x != 0 or avg_y != 0:
-            pydirectinput.moveRel(avg_x, avg_y, relative=True)
+            pydirectinput.moveRel(avg_x, avg_y)
 
         return distance
 
@@ -119,5 +133,4 @@ class AimAssist:
         """获取统计信息"""
         return {
             "shots_fired": self.shots_fired,
-            "targets_hit": self.targets_hit,
         }

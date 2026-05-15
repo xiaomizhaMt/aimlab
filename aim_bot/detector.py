@@ -5,9 +5,11 @@ Aim Lab 自动瞄准射击程序 - 目标检测模块
 
 import cv2
 import numpy as np
-from config import (
-    TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG
-)
+
+try:
+    from .config import TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG
+except ImportError:
+    from config import TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG
 
 
 class TargetDetector:
