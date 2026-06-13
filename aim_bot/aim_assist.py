@@ -113,6 +113,13 @@ class AimAssist:
 
         return True
 
+    def clear_smoothing(self):
+        """清空平滑历史（目标丢失时调用，避免旧偏移值污染下次瞄准）。
+
+        与 reset() 不同，这里不重置射击冷却，避免影响连发节奏。
+        """
+        self._smooth_history.clear()
+
     def is_in_shoot_range(self, distance):
         """检查目标是否在射击范围内
 

@@ -140,7 +140,6 @@ class AimBot:
                 print(f"[信息] 使用捕获画面中心: {self._screen_center}")
 
             self.frame_count += 1
-            fps_counter += 1
 
             now = time.time()
             if now - last_fps_time >= 1.0:
@@ -150,6 +149,9 @@ class AimBot:
 
             if self.frame_count % DETECT_FRAME_SKIP != 0:
                 continue
+
+            # 仅统计通过帧跳跃、真正进入检测环节的帧，FPS 反映实际处理速率
+            fps_counter += 1
 
             if not self.enabled:
                 if SHOW_DEBUG and self.frame_count % 30 == 0:
@@ -175,6 +177,9 @@ class AimBot:
 
                 if self.aim_assist.is_in_shoot_range(distance):
                     self.aim_assist.shoot()
+            else:
+                # 当前帧没有目标：清空平滑历史，避免旧偏移值滞后影响下次瞄准
+                self.aim_assist.clear_smoothing()
 
             if SHOW_DEBUG:
                 self._show_debug(frame, best_target, all_targets, fps)
