@@ -17,9 +17,9 @@ class ScreenCapture:
     """屏幕捕获器，封装 DXcam 的启动、取帧和释放。"""
 
     def __init__(self):
-        self.camera = None
-        self.target_fps = 60
-        self._window_rect = None
+        self.camera = None          # DXcam 捕获器实例，未启动时为 None
+        self.target_fps = 60        # 目标捕获帧率
+        self._window_rect = None    # 当前捕获区域 (left, top, right, bottom)
 
     def find_window(self):
         """
@@ -28,6 +28,7 @@ class ScreenCapture:
         Returns:
             tuple | None: 客户区屏幕坐标 (left, top, right, bottom)。
         """
+        # 枚举回调：收集标题包含目标关键字的可见窗口句柄
         def enum_callback(hwnd, windows):
             if win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
@@ -36,16 +37,17 @@ class ScreenCapture:
             return True
 
         windows = []
-        win32gui.EnumWindows(enum_callback, windows)
+        win32gui.EnumWindows(enum_callback, windows)  # 遍历所有顶层窗口
 
         if not windows:
             print(f"[警告] 未找到标题包含 '{WINDOW_TITLE}' 的窗口")
             print("[信息] 将使用全屏捕获模式")
             return None
 
+        # 取第一个匹配窗口，换算其客户区在屏幕上的绝对坐标
         hwnd = windows[0]
-        rect = win32gui.GetClientRect(hwnd)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
+        rect = win32gui.GetClientRect(hwnd)            # 客户区尺寸 (0,0,宽,高)
+        left, top = win32gui.ClientToScreen(hwnd, (0, 0))  # 客户区左上角→屏幕坐标
         right = left + rect[2]
         bottom = top + rect[3]
 

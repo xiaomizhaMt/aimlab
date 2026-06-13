@@ -59,21 +59,22 @@ class AimAssist:
         Returns:
             float: 目标到屏幕中心的距离（像素）
         """
-        # 计算偏移量
+        # 计算目标相对屏幕中心的水平/垂直偏移量（带正负，表示方向）
         dx = target_cx - screen_center_x
         dy = target_cy - screen_center_y
 
+        # 欧氏距离：目标离准星有多远
         distance = np.sqrt(dx ** 2 + dy ** 2)
 
         # 死区检测：目标已经在屏幕中心附近，不移动鼠标
         if distance < AIM_DEADZONE:
             return distance
 
-        # 应用灵敏度
+        # 应用灵敏度倍数，得到本帧期望的鼠标移动量
         move_x = int(dx * AIM_SENSITIVITY)
         move_y = int(dy * AIM_SENSITIVITY)
 
-        # 平滑处理：移动平均
+        # 平滑处理：把最近几帧的移动量做移动平均，削弱抖动、避免过冲
         self._smooth_history.append((move_x, move_y))
 
         if len(self._smooth_history) > 1:
