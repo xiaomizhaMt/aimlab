@@ -12,6 +12,8 @@ import pydirectinput
 try:
     from .config import (
         AIM_DEADZONE,
+        AIM_FAR_BOOST,
+        AIM_FAR_THRESHOLD,
         AIM_SENSITIVITY,
         AIM_SMOOTHING,
         AUTO_SHOOT,
@@ -21,6 +23,8 @@ try:
 except ImportError:
     from config import (
         AIM_DEADZONE,
+        AIM_FAR_BOOST,
+        AIM_FAR_THRESHOLD,
         AIM_SENSITIVITY,
         AIM_SMOOTHING,
         AUTO_SHOOT,
@@ -70,9 +74,14 @@ class AimAssist:
         if distance < AIM_DEADZONE:
             return distance
 
+        # 自适应增益：远距离放大灵敏度加快转场，靠近后用基础灵敏度保证精度
+        gain = AIM_SENSITIVITY
+        if distance > AIM_FAR_THRESHOLD:
+            gain *= AIM_FAR_BOOST
+
         # 应用灵敏度倍数，得到本帧期望的鼠标移动量
-        move_x = int(dx * AIM_SENSITIVITY)
-        move_y = int(dy * AIM_SENSITIVITY)
+        move_x = int(dx * gain)
+        move_y = int(dy * gain)
 
         # 平滑处理：把最近几帧的移动量做移动平均，削弱抖动、避免过冲
         self._smooth_history.append((move_x, move_y))
@@ -84,8 +93,37 @@ class AimAssist:
             avg_x, avg_y = move_x, move_y
 
         # 应用鼠标移动（相对移动）
+        # 必须 relative=True：发送原始相对位移事件，FPS 游戏的 Raw Input 才能
+        # 接收并转动视角；默认 relative=False 会走绝对定位(SetCursorPos)，
+        # 在锁定光标的游戏里不产生任何视角旋转。
         if avg_x != 0 or avg_y != 0:
-            pydirectinput.moveRel(avg_x, avg_y)
+            pydirectinput.moveRel(avg_x, avg_y, relative=True)
+
+        return distance
+
+    def update(self, target_cx, target_cy, screen_center_x, screen_center_y):
+        """每帧处理目标：在射击范围内先开火，然后**始终**朝靶心继续收敛。
+
+        要点：
+        - 开火基于当前检测到的位置，且在移动之前进行，避免「移动过冲后开火脱靶」。
+        - 无论是否开火都继续 aim_at 朝靶心移动（aim_at 内含死区，靠近后自然停住），
+          避免「停在靶边缘一直空射」——准星会持续收敛到球心再稳定命中。
+        - 单调收敛、不过冲依赖足够低的 AIM_SENSITIVITY。
+
+        Returns:
+            float: 目标到屏幕中心的距离（像素）
+        """
+        dx = target_cx - screen_center_x
+        dy = target_cy - screen_center_y
+        distance = np.sqrt(dx ** 2 + dy ** 2)
+
+        # 命中范围内即开火（受 shoot() 冷却节流）。Gridshot 靶子密集时高速连射吞吐最高：
+        # 实测"每靶只开一枪"的门控会让准星贴着已击杀的靶干等其消失，反而拖慢节奏。
+        if distance <= SHOOT_RANGE:
+            self.shoot()
+
+        # 始终朝靶心收敛（死区内 aim_at 会自动停止移动）
+        self.aim_at(target_cx, target_cy, screen_center_x, screen_center_y)
 
         return distance
 
@@ -105,8 +143,9 @@ class AimAssist:
             return False
 
         # 执行射击（鼠标按下 + 释放）
+        # 按下时长尽量短：每枪的 sleep 会累加占用主循环时间，过长会拖慢整体节奏
         pydirectinput.mouseDown(button='left')
-        time.sleep(0.02)  # 短暂的按下时间
+        time.sleep(0.008)
         pydirectinput.mouseUp(button='left')
 
         self._last_shot_time = current_time

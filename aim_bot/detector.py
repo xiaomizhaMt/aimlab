@@ -7,9 +7,13 @@ import cv2
 import numpy as np
 
 try:
-    from .config import TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG
+    from .config import (
+        TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG, DETECT_SCALE,
+    )
 except ImportError:
-    from config import TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG
+    from config import (
+        TARGET_COLORS, DETECT_RADIUS, SHOOT_RANGE, SHOW_DEBUG, DETECT_SCALE,
+    )
 
 
 class TargetDetector:
@@ -44,11 +48,26 @@ class TargetDetector:
             return None, []
 
         self._frame_count += 1
-        height, width = frame.shape[:2]
+
+        # 检测前缩放：把画面缩小到 DETECT_SCALE 再做 cv2 处理，处理量按平方下降，
+        # 大幅提升循环帧率、降低瞄准延迟。坐标最后换算回原分辨率。
+        s = DETECT_SCALE
+        if s != 1.0:
+            proc = cv2.resize(frame, None, fx=s, fy=s,
+                              interpolation=cv2.INTER_NEAREST)
+        else:
+            proc = frame
+
+        # 中心、半径、最小面积换算到缩放空间
+        scx = center_x * s
+        scy = center_y * s
+        radius_s = DETECT_RADIUS * s
+        min_area_s = max(5.0, 20 * s * s)  # 原始 20px 面积阈值按缩放换算
+        inv = 1.0 / s
 
         # 转换到 HSV 颜色空间
         # HSV 相比 BGR 的优势：色相(H)不受光照变化影响，颜色过滤更稳定
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(proc, cv2.COLOR_BGR2HSV)
 
         all_targets = []
 
@@ -60,7 +79,7 @@ class TargetDetector:
             # 形态学操作：去噪和平滑
             # MORPH_OPEN (先腐蚀后膨胀)：去除白色噪点
             # MORPH_CLOSE (先膨胀后腐蚀)：填充目标内部空洞
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
@@ -69,35 +88,32 @@ class TargetDetector:
                                            cv2.CHAIN_APPROX_SIMPLE)
 
             for contour in contours:
-                area = cv2.contourArea(contour)
-                # 过滤太小的噪声（小于20像素的区域）
-                if area < 20:
+                area_s = cv2.contourArea(contour)
+                # 过滤太小的噪声（缩放空间阈值）
+                if area_s < min_area_s:
                     continue
 
-                # 获取外接矩形和中心点坐标
-                x, y, w, h = cv2.boundingRect(contour)
-                cx = x + w // 2
-                cy = y + h // 2
+                # 获取外接矩形和中心点坐标（缩放空间）
+                x_s, y_s, w_s, h_s = cv2.boundingRect(contour)
+                cx_s = x_s + w_s / 2
+                cy_s = y_s + h_s / 2
 
-                # 限制在检测区域内（只处理屏幕中心一定半径内的目标）
-                # 这样可以：
-                # 1. 减少误检
-                # 2. 提升性能
-                # 3. 专注于当前瞄准目标
-                dist = np.sqrt((cx - center_x) ** 2 + (cy - center_y) ** 2)
-                if dist > DETECT_RADIUS:
+                # 限制在检测区域内（缩放空间内比较，避免重复换算）
+                dist_s = np.sqrt((cx_s - scx) ** 2 + (cy_s - scy) ** 2)
+                if dist_s > radius_s:
                     continue
 
+                # 坐标换算回原分辨率，供下游瞄准使用
                 all_targets.append({
-                    "cx": cx,           # 目标中心 x（帧内坐标）
-                    "cy": cy,           # 目标中心 y（帧内坐标）
-                    "x": x,             # 外接矩形左上角 x
-                    "y": y,             # 外接矩形左上角 y
-                    "w": w,             # 外接矩形宽度
-                    "h": h,             # 外接矩形高度
-                    "area": area,       # 目标面积（像素数）
-                    "dist": dist,       # 到屏幕中心的距离
-                    "color": color_name # 颜色名称
+                    "cx": int(cx_s * inv),          # 目标中心 x（原分辨率帧内坐标）
+                    "cy": int(cy_s * inv),          # 目标中心 y
+                    "x": int(x_s * inv),            # 外接矩形左上角 x
+                    "y": int(y_s * inv),            # 外接矩形左上角 y
+                    "w": int(w_s * inv),            # 外接矩形宽度
+                    "h": int(h_s * inv),            # 外接矩形高度
+                    "area": area_s * inv * inv,     # 目标面积（原分辨率像素数）
+                    "dist": dist_s * inv,           # 到屏幕中心的距离（原分辨率）
+                    "color": color_name             # 颜色名称
                 })
 
         # 选择最优目标：综合考虑距离和面积进行评分
@@ -112,10 +128,10 @@ class TargetDetector:
 
     def _select_best_target(self, targets, center_x, center_y):
         """
-        从多个目标中选择最优目标。
+        从多个目标中选择最优目标 —— 纯最近原则。
 
-        评分规则：距离越近越好（权重0.8），面积越大越好（权重0.2）。
-        归一化后加权求和，分数最低者为最优。
+        Gridshot 等密集靶场，靶子大小相近，选「离准星最近」的目标可最小化转场
+        距离/时间，吞吐最高（面积加权会偶尔选到稍远的大靶，增加无谓转场）。
 
         Returns:
             dict | None: 最优目标，无目标时返回 None
@@ -123,20 +139,12 @@ class TargetDetector:
         if not targets:
             return None
 
-        # 归一化基准值
-        max_dist = max(t["dist"] for t in targets) if targets else 1
-        max_area = max(t["area"] for t in targets) if targets else 1
-
         best = None
         best_score = float("inf")
 
         for t in targets:
-            # 距离评分：越近越接近0，越远越接近1
-            dist_score = t["dist"] / max_dist
-            # 面积评分：越大越接近0，越小越接近1
-            area_score = 1 - (t["area"] / max_area)
-            # 加权综合评分（距离优先）
-            score = dist_score * 0.8 + area_score * 0.2
+            # 纯按到准星的距离选最近目标
+            score = t["dist"]
 
             if score < best_score:
                 best_score = score

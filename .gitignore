@@ -15,3 +15,7 @@ build/
 
 # Windows
 Thumbs.db
+
+# 诊断/测试产物（运行 diag.py 生成的截图）
+diag_frame.png
+diag_mask.png

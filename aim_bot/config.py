@@ -6,8 +6,9 @@ Aim Lab 自动瞄准射击程序 - 配置文件
 import numpy as np
 
 # ============ 窗口设置 ============
-# Aim Lab 窗口标题（用于自动定位）
-WINDOW_TITLE = "Aim Lab"
+# Aim Lab 窗口标题（用于自动定位，子串匹配，不区分大小写）
+# 实际窗口标题为 "aimlab_tb"，用 "Aimlab" 可同时匹配 aimlab_tb / Aimlabs
+WINDOW_TITLE = "Aimlab"
 
 # ============ 目标检测颜色范围 (HSV) ============
 # HSV 颜色模型: H(色相 0-180), S(饱和度 0-255), V(明度 0-255)
@@ -30,11 +31,16 @@ TARGET_RED_UPPER2 = np.array([180, 255, 255])
 TARGET_BLUE_LOWER = np.array([100, 100, 100])   # H≈100° 蓝绿
 TARGET_BLUE_UPPER = np.array([130, 255, 255])   # H≈130° 蓝色
 
+# 青色靶标 —— Aimlabs 默认靶球颜色（高饱和亮青色，H≈90°）
+TARGET_CYAN_LOWER = np.array([80, 90, 90])      # H≈80° 偏绿青
+TARGET_CYAN_UPPER = np.array([100, 255, 255])   # H≈100° 偏蓝青
+
 # 要检测的颜色组合（可自由组合）
-# 默认只检测橙色（最常见靶心颜色）
+# 当前启用青色（Aimlabs 默认靶色）
 # 如需检测多种颜色，取消对应行的注释即可
 TARGET_COLORS = [
-    ("orange", TARGET_ORANGE_LOWER, TARGET_ORANGE_UPPER),
+    ("cyan", TARGET_CYAN_LOWER, TARGET_CYAN_UPPER),
+    # ("orange", TARGET_ORANGE_LOWER, TARGET_ORANGE_UPPER),
     # ("green", TARGET_GREEN_LOWER, TARGET_GREEN_UPPER),
     # ("red1", TARGET_RED_LOWER1, TARGET_RED_UPPER1),
     # ("red2", TARGET_RED_LOWER2, TARGET_RED_UPPER2),
@@ -43,22 +49,30 @@ TARGET_COLORS = [
 
 # ============ 瞄准设置 ============
 # 瞄准灵敏度 (鼠标移动速度倍数)
-# 值越大，鼠标移动越快；建议 0.5 ~ 1.5
-AIM_SENSITIVITY = 1.0
+# 值越大，鼠标移动越快；过大会过冲震荡。
+# 无过冲的最快增益约等于"一步到位"增益(≈1/G)，超过它必然过冲。
+# 2K 下实测 0.33 左右刚好不过冲(过甩占比最低)。
+AIM_SENSITIVITY = 0.42
+
+# 自适应增益：远距离倍数。实测放大增益只会让远靶过冲、无收益，故设为 1.0(关闭)。
+# 保留参数便于后续按需微调。
+AIM_FAR_THRESHOLD = 250   # 距中心超过该像素视为"远距离"
+AIM_FAR_BOOST = 1.0       # 远距离时灵敏度倍数(1.0=不加速)
 
 # 瞄准平滑度 (帧数，值越大越平滑但反应越慢)
 # 使用移动平均平滑鼠标移动
-AIM_SMOOTHING = 3
+AIM_SMOOTHING = 1
 
 # 瞄准死区 (像素) - 目标离屏幕中心小于此值时不移动鼠标
-AIM_DEADZONE = 15
+AIM_DEADZONE = 8
 
 # ============ 射击设置 ============
 # 自动射击触发范围 (像素) - 准星距离目标中心多远时自动开枪
-SHOOT_RANGE = 40
+SHOOT_RANGE = 50
 
 # 射击后冷却时间 (秒) - 防止连发过快
-SHOOT_COOLDOWN = 0.15
+# 0.04 配合密集靶场高速连射吞吐最高（实测"每靶一枪"的门控反而拖慢节奏）
+SHOOT_COOLDOWN = 0.04
 
 # 是否启用自动射击
 AUTO_SHOOT = True
@@ -66,7 +80,13 @@ AUTO_SHOOT = True
 # ============ 检测区域设置 ============
 # 屏幕中心检测区域的半径 (像素)
 # 只检测屏幕中心这个范围内的目标，提高性能
-DETECT_RADIUS = 200
+# 注意：需覆盖训练里靶子的散布范围，过小会导致偏离准星的靶子检测不到
+DETECT_RADIUS = 1000
+
+# 检测缩放比例：检测前把画面缩小到该比例再做 cv2 处理，处理量按平方下降。
+# 2K 全画面处理太慢(限制循环帧率/增大延迟)，0.5 可使循环提速约一倍。
+# 靶球较大，缩放后仍能稳定识别；坐标会自动换算回原分辨率。
+DETECT_SCALE = 0.33
 
 # 检测帧率 (每隔多少帧执行一次完整检测)
 # 1 = 每帧都检测，2 = 隔一帧检测一次... 用于性能优化

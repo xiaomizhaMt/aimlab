@@ -18,7 +18,7 @@ class ScreenCapture:
 
     def __init__(self):
         self.camera = None          # DXcam 捕获器实例，未启动时为 None
-        self.target_fps = 60        # 目标捕获帧率
+        self.target_fps = 120       # 目标捕获帧率（高帧率降低检测延迟，提升瞄准吞吐）
         self._window_rect = None    # 当前捕获区域 (left, top, right, bottom)
 
     def find_window(self):
